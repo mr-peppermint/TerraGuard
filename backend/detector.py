@@ -1,16 +1,4 @@
-"""
-VanRakshak - Earth Engine forest-loss detector (no web-framework code here).
-
-Method (rule-based change detection on Sentinel-2 L2A):
-  * Cloud / shadow / cirrus / snow masked with the SCL band (classes 3, 8, 9, 10, 11).
-  * Monitoring composite  = median of the most recent N days (5 / 10 / 15 ...).
-  * Seasonal baseline     = median of the SAME calendar window one year earlier (+/-15 days).
-    This is what stops leaf-fall / harvest / monsoon greening being flagged as loss.
-  * Recent baseline       = median of the 60 days before the monitoring window.
-    A pixel must also have dropped vs. this baseline, so only *recent* clearing is flagged.
-  * Only pixels that were forest (ESA WorldCover class 10, NDVI >= 0.5 last year) are kept.
-  * Small patches are sieved out with connectedPixelCount, then vectorised to polygons.
-"""
+import json
 import math
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -31,15 +19,26 @@ EE_ERROR = "Earth Engine not initialised yet"
 
 # --------------------------------------------------------------------------- init
 def init_earth_engine():
+    """
+    Auth order (first match wins):
+      1. EE_SERVICE_ACCOUNT_JSON_CONTENT - full JSON key text (use this on cloud hosts, no file needed)
+      2. EE_SERVICE_ACCOUNT_JSON         - path to a key file on disk
+      3. cached `earthengine authenticate` login (developer machine)
+    """
     global EE_READY, EE_ERROR
     if ee is None:
         EE_READY, EE_ERROR = False, "earthengine-api is not installed (pip install -r requirements.txt)"
         return False
     project = os.getenv("GCP_PROJECT_ID") or None
-    key = os.getenv("EE_SERVICE_ACCOUNT_JSON")
+    key_content = (os.getenv("EE_SERVICE_ACCOUNT_JSON_CONTENT") or "").strip()
+    key_path = os.getenv("EE_SERVICE_ACCOUNT_JSON")
     try:
-        if key and os.path.isfile(key):
-            ee.Initialize(ee.ServiceAccountCredentials(None, key), project=project)
+        if key_content:
+            email = json.loads(key_content)["client_email"]
+            creds = ee.ServiceAccountCredentials(email, key_data=key_content)
+            ee.Initialize(creds, project=project)
+        elif key_path and os.path.isfile(key_path):
+            ee.Initialize(ee.ServiceAccountCredentials(None, key_path), project=project)
         else:  # developer machine: run `earthengine authenticate` once
             ee.Initialize(project=project)
         EE_READY, EE_ERROR = True, None
