@@ -20,7 +20,6 @@ dist-ssr
 *.sw?
 backend/.venv
 # Environment
-.env
 .env.local
 .env.*.local
 
